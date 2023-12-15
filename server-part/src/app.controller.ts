@@ -7,6 +7,6 @@ export class AppController {
 
   @Get()
   async getContacts(@Query('query') searchParam: string) {
-    return await this.amoCRMService.getContacts(searchParam) || []
+    return await this.amoCRMService.getLeads(searchParam) || []
   }
 }

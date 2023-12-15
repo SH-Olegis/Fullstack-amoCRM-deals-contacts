@@ -3,7 +3,7 @@ import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 
-import readFileData from '../utils/read-file-data';
+import readFileData from '../utils/read-json-file';
 
 import { Contact } from './contacts/contacts.interfaces';
 
@@ -35,14 +35,36 @@ export class AmoCRMService {
         }),
       );
 
-      if (response.status === 401) {
+      return response.data;
+    } catch (error) {
+      if (error.response.status === 401) {
         await this.refreshAccessToken()
         await this.getContacts(searchParam)
       }
+      // Обработка ошибок
+    }
+  }
+
+  async getLeads(searchParam: string): Promise<Contact[]> {
+    try {
+      const response = await firstValueFrom(
+          this.httpService.get(`${this.apiUrl}/api/v4/leads`, {
+            params: {
+              query: searchParam,
+              with: 'contacts'
+            },
+            headers: {
+              Authorization: `Bearer ${this.accessToken}`,
+            },
+          }),
+      );
 
       return response.data;
     } catch (error) {
-      // Обработка ошибок
+      if (error.response.status === 401) {
+        await this.refreshAccessToken()
+        await this.getLeads(searchParam)
+      }
     }
   }
 
