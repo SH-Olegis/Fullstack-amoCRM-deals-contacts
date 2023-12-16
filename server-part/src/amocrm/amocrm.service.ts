@@ -5,7 +5,10 @@ import { firstValueFrom } from 'rxjs';
 
 import { readJsonFile } from '../utils/read-write-json-file';
 
-import { Contact } from './contacts/contacts.interfaces';
+import { Contact } from './interfaces/contacts.interfaces';
+import { ClientResponse, LeadsResponse } from './interfaces/leads.interfaces'
+import { PipelineResponse } from './interfaces/pipelines.interfaces';
+import { UsersResponse } from './interfaces/users.interfaces';
 
 import stateStatus from './config/state-status';
 
@@ -23,7 +26,7 @@ export class AmoCRMService {
     this.accessToken = this.configService.get<string>('AMOCRM_ACCESS_TOKEN');
   }
 
-  async getContacts(searchParam: string): Promise<Contact[]> {
+  async getContacts(searchParam: string): Promise<Contact> {
     try {
       return this.sendRequest('contacts', searchParam, 'leads')
     } catch (error) {
@@ -31,15 +34,54 @@ export class AmoCRMService {
     }
   }
 
-  async getLeads(searchParam: string): Promise<Contact[]> {
+  async getLeads(searchParam: string): Promise<ClientResponse[]> {
     try {
-      return this.sendRequest('leads', searchParam, 'contacts');
+      const leads = await this.sendRequest<LeadsResponse>('leads', searchParam, 'contacts');
+      const statuses = await this.getStatusesNames();
+      const responsiblesNames = await this.getResponsibleNames();
+
+      return leads._embedded.leads.map(lead => ({
+        name: lead.name,
+        budget: lead.price,
+        date: new Date(lead.created_at * 1000),
+        status: statuses.find(status => status.id === lead.status_id)?.name,
+        responsible: responsiblesNames.find(responsible => responsible.id === lead.responsible_user_id)?.name,
+      }))
+
     } catch(error) {
       throw Error(error)
     }
   }
 
-  private async sendRequest(entity: string, searchParam: string, withParam: string): Promise<Contact[]> {
+  async getPipelines(): Promise<PipelineResponse> {
+    return await this.sendRequest<PipelineResponse>('leads/pipelines')
+  }
+
+  async getStatusesNames () {
+    const pipelines = await this.getPipelines()
+
+    return pipelines._embedded.pipelines.flatMap(pipeline =>
+        pipeline._embedded.statuses.map(status => ({
+          id: status.id,
+          name: status.name,
+        }))
+    );
+  }
+
+  async getUsers (): Promise<UsersResponse> {
+    return await this.sendRequest('users')
+  }
+
+  async getResponsibleNames (){
+    const responsibles = await this.getUsers();
+
+    return responsibles._embedded.users.map(user => ({
+      id: user.id,
+      name: user.name,
+    }));
+  }
+
+  private async sendRequest<T>(entity: string, searchParam: string = '', withParam: string = ''): Promise<T> {
     try {
       const response = await firstValueFrom(
           this.httpService.get(`${this.apiUrl}/api/v4/${entity}`, {
@@ -62,6 +104,8 @@ export class AmoCRMService {
           throw Error(error)
         }
       }
+
+      return error
     }
   }
 
