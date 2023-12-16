@@ -3,12 +3,14 @@ import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 
-import readFileData from '../utils/read-json-file';
+import { readJsonFile } from '../utils/read-write-json-file';
 
 import { Contact } from './contacts/contacts.interfaces';
 
-const authData = readFileData('src/config/amoCRMInfo.json');
-const tokens = readFileData('src/config/tokensInfo.json');
+import stateStatus from './config/state-status';
+
+import * as path from 'path';
+
 @Injectable()
 export class AmoCRMService {
   private readonly apiUrl: string;
@@ -23,35 +25,27 @@ export class AmoCRMService {
 
   async getContacts(searchParam: string): Promise<Contact[]> {
     try {
-      const response = await firstValueFrom(
-        this.httpService.get(`${this.apiUrl}/api/v4/contacts`, {
-          params: {
-            query: searchParam,
-            with: 'leads'
-          },
-          headers: {
-            Authorization: `Bearer ${this.accessToken}`,
-          },
-        }),
-      );
-
-      return response.data;
+      return this.sendRequest('contacts', searchParam, 'leads')
     } catch (error) {
-      if (error.response.status === 401) {
-        await this.refreshAccessToken()
-        await this.getContacts(searchParam)
-      }
-      // Обработка ошибок
+      throw Error(error)
     }
   }
 
   async getLeads(searchParam: string): Promise<Contact[]> {
     try {
+      return this.sendRequest('leads', searchParam, 'contacts');
+    } catch(error) {
+      throw Error(error)
+    }
+  }
+
+  private async sendRequest(entity: string, searchParam: string, withParam: string): Promise<Contact[]> {
+    try {
       const response = await firstValueFrom(
-          this.httpService.get(`${this.apiUrl}/api/v4/leads`, {
+          this.httpService.get(`${this.apiUrl}/api/v4/${entity}`, {
             params: {
               query: searchParam,
-              with: 'contacts'
+              with: withParam
             },
             headers: {
               Authorization: `Bearer ${this.accessToken}`,
@@ -61,14 +55,20 @@ export class AmoCRMService {
 
       return response.data;
     } catch (error) {
-      if (error.response.status === 401) {
-        await this.refreshAccessToken()
-        await this.getLeads(searchParam)
+      if (error.response.data.title === stateStatus.UNAUTHORIZED) {
+        try {
+          await this.refreshAccessToken();
+        } catch (error) {
+          throw Error(error)
+        }
       }
     }
   }
 
   async refreshAccessToken() {
+    const authData = await readJsonFile(path.join(__dirname, '../config/amoCRMInfo.json'));
+    const tokens = await readJsonFile(path.join(__dirname, '../config/tokensInfo.json'));
+
     try {
       const refreshData = {
         ...authData,
@@ -84,8 +84,36 @@ export class AmoCRMService {
       );
 
       this.accessToken = tokensData.access_token;
+
+      return tokensData
     } catch (error) {
-      // Обработка ошибок
+      if (error.response.data.hint === stateStatus.REFRESH_TOKEN_NOT_AVAILABLE) {
+        throw Error('Refresh token not available, please update your tokens from amoCRM service')
+      }
+    }
+  }
+
+  async registerAccount() {
+    const amoCRMInfo = await readJsonFile(path.join(__dirname, '..', 'config/amoCRMInfo.json'))
+    const amoCRMCodeIntegration = await readJsonFile(path.join(__dirname, '..', 'config/codeAmoCRM.json'))
+
+    const registerData = {
+      ...amoCRMInfo,
+      ...amoCRMCodeIntegration,
+      grant_type: 'authorization_code'
+    }
+
+    try {
+      const { data: tokensData } = await firstValueFrom(
+          this.httpService.post(
+              `${this.apiUrl}/oauth2/access_token`,
+              registerData,
+          ),
+      );
+
+      return tokensData
+    } catch (error) {
+      console.log(error);
     }
   }
 }
