@@ -1,17 +1,43 @@
-import { Controller, Get } from '@nestjs/common';
-import { AmoCRMService } from './amocrm.service';
+import { Controller, Get, Param, Query, Req } from '@nestjs/common';
+import { LeadsService } from './leads/leads.service';
+import { ContactsService } from './contacts/contacts.service';
+import { UsersService } from './users/users.service';
+import { StatusService } from './status/status.service';
+import * as async from 'async';
 
-@Controller('amocrm')
+@Controller('leads')
 export class ArmCRMController {
-    constructor(private readonly amoCRMService: AmoCRMService) {}
+  constructor(
+    private readonly leadsService: LeadsService,
+    private readonly contactsService: ContactsService,
+    private readonly usersService: UsersService,
+    private readonly statusService: StatusService,
+  ) {}
 
-    @Get('refresh')
-    async refreshToken() {
-        return await this.amoCRMService.refreshAccessToken()
-    }
+  @Get()
+  async getLeads(@Query('search') searchParam: string) {
+    const leadsData = await this.leadsService.getLeads(searchParam);
+    const results = [];
 
-    @Get('register')
-    async registerAccount() {
-        return await this.amoCRMService.registerAccount();
-    }
+    await async.eachLimit(leadsData, 4, async (lead) => {
+      const contacts = await this.contactsService.getContacts(
+        lead.contacts_ids,
+      );
+
+      const responsibleUser = await this.usersService.getUser(
+        lead.responsible_user_id,
+      );
+
+      const status = await this.statusService.getStatus(lead.status_id);
+
+      results.push({
+        ...lead,
+        contacts: contacts.length ? contacts : null,
+        responsible_user: responsibleUser,
+        status,
+      });
+    });
+
+    return results;
+  }
 }
