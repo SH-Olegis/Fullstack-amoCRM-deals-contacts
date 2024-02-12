@@ -1,14 +1,5 @@
-<script lang="ts">
-import { defineComponent } from 'vue';
-
-import LeadsTable from '@/components/leads/LeadsTable.vue';
-
-export default defineComponent({
-  name: 'App',
-  components: {
-    LeadsTable
-  }
-})
+<script lang="ts" setup>
+import LeadsTable from '@/feature/leads/LeadsTable.vue'
 </script>
 
 <template>
